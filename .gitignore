@@ -1,0 +1,9 @@
+__pycache__
+classifier_test
+datasets
+decomposer_test
+lightning_logs
+models
+plot_examples
+plot_losses
+*~

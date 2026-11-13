@@ -367,7 +367,7 @@ plotter.plot_parameter_performance(
     n_par_bins=N_PARAMETER_BINS
 )
 
-print("\nSimilarity:") #median = 0.9995, 68% interval = [0.9931, 0.9999]
+print("\nSimilarity:") 
 
 best_event, worst_event = plotter.plot_component_similarity(
     y_test,

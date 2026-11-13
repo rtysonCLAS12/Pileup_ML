@@ -46,6 +46,146 @@ class DecompositionDataset(Dataset):
         }
 
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class ResidualBlock(nn.Module):
+
+    __annotations__ = {}
+
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+
+        self.conv1 = nn.Conv1d(
+            in_channels, out_channels,
+            kernel_size=5, padding=2
+        )
+        self.bn1 = nn.BatchNorm1d(out_channels)
+
+        self.conv2 = nn.Conv1d(
+            out_channels, out_channels,
+            kernel_size=5, padding=2
+        )
+        self.bn2 = nn.BatchNorm1d(out_channels)
+
+        self.shortcut = (
+            nn.Identity()
+            if in_channels == out_channels
+            else nn.Sequential(
+                nn.Conv1d(in_channels, out_channels, kernel_size=1),
+                nn.BatchNorm1d(out_channels)
+            )
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+
+        residual = self.shortcut(x)
+
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.bn2(self.conv2(x))
+
+        return self.relu(x + residual)
+
+
+class UNet1D(nn.Module):
+
+    __annotations__ = {}
+
+    def __init__(
+        self,
+        n_components,
+        base_channels=64
+    ):
+        super().__init__()
+
+        c1 = base_channels
+        c2 = base_channels * 2
+        c3 = base_channels * 4
+        c4 = base_channels * 8
+
+        # Encoder
+        self.enc1 = ResidualBlock(1, c1)
+        self.enc2 = ResidualBlock(c1, c2)
+        self.enc3 = ResidualBlock(c2, c3)
+
+        self.pool = nn.MaxPool1d(kernel_size=2)
+
+        # Bottleneck
+        self.bottleneck = ResidualBlock(c3, c4)
+
+        # Decoder
+        self.up3 = nn.ConvTranspose1d(
+            c4, c3, kernel_size=2, stride=2
+        )
+        self.dec3 = ResidualBlock(c3 * 2, c3)
+
+        self.up2 = nn.ConvTranspose1d(
+            c3, c2, kernel_size=2, stride=2
+        )
+        self.dec2 = ResidualBlock(c2 * 2, c2)
+
+        self.up1 = nn.ConvTranspose1d(
+            c2, c1, kernel_size=2, stride=2
+        )
+        self.dec1 = ResidualBlock(c1 * 2, c1)
+
+        # Component spectra
+        self.out = nn.Conv1d(
+            c1, n_components, kernel_size=1
+        )
+
+    def match_size(self, x, target):
+
+        diff = target.shape[-1] - x.shape[-1]
+
+        if diff > 0:
+            x = F.pad(x, (0, diff))
+
+        elif diff < 0:
+            x = x[..., :target.shape[-1]]
+
+        return x
+
+    def forward(self, x):
+
+        # Encoder
+        e1 = self.enc1(x)
+
+        e2 = self.enc2(self.pool(e1))
+
+        e3 = self.enc3(self.pool(e2))
+
+        # Bottleneck
+        b = self.bottleneck(self.pool(e3))
+
+        # Decoder 3
+        d3 = self.up3(b)
+
+        d3 = self.match_size(d3, e3)
+
+        d3 = self.dec3(torch.cat([d3, e3], dim=1))
+
+        # Decoder 2
+        d2 = self.up2(d3)
+
+        d2 = self.match_size(d2, e2)
+
+        d2 = self.dec2(torch.cat([d2, e2], dim=1))
+
+        # Decoder 1
+        d1 = self.up1(d2)
+
+        d1 = self.match_size(d1, e1)
+
+        d1 = self.dec1(torch.cat([d1, e1], dim=1))
+
+        return self.out(d1)
+
+
 class ComponentDecomposer(pl.LightningModule):
     """
     Predicts individual component histograms from a mixed histogram.
@@ -77,26 +217,35 @@ class ComponentDecomposer(pl.LightningModule):
         self.lr = lr
         self.lambda_nevs = lambda_nevs
 
-        self.net = nn.Sequential(
-            nn.Conv1d(1, 64, kernel_size=5, padding=2),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
+        # First model similarity median = 0.9988, 68% interval = [0.9922, 0.9998]
+        # UNet model similaritymedian = 0.9996, 68% interval = [0.9965, 0.9999]
 
-            nn.Conv1d(64, 128, kernel_size=5, padding=2),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
+        #  first model
+        # self.net = nn.Sequential(
+        #     nn.Conv1d(1, 64, kernel_size=5, padding=2),
+        #     nn.BatchNorm1d(64),
+        #     nn.ReLU(),
 
-            nn.Conv1d(128, n_components, kernel_size=5, padding=2),
-            nn.BatchNorm1d(n_components),
-            nn.ReLU(),
+        #     nn.Conv1d(64, 128, kernel_size=5, padding=2),
+        #     nn.BatchNorm1d(128),
+        #     nn.ReLU(),
 
-            nn.Flatten(),
+        #     nn.Conv1d(128, n_components, kernel_size=5, padding=2),
+        #     nn.BatchNorm1d(n_components),
+        #     nn.ReLU(),
 
-            nn.Linear(
-                n_components * n_bins,
-                n_components * n_bins
-            ),
-            nn.ReLU()
+        #     nn.Flatten(),
+
+        #     nn.Linear(
+        #         n_components * n_bins,
+        #         n_components * n_bins
+        #     ),
+        #     nn.ReLU()
+        # )
+
+        self.net = UNet1D(
+            n_components=n_components,
+            base_channels=64
         )
 
     # ---------------------------------------------------------

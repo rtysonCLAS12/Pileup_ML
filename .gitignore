@@ -2,6 +2,7 @@ __pycache__
 classifier_test
 datasets
 decomposer_test
+decomposer_test_firstmodel
 lightning_logs
 models
 plot_examples

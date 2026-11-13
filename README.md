@@ -2,6 +2,8 @@
 
 Code to train ML models to identify drift chamber pileup events and predict individual waveforms contributing to pileup events.
 
+The slides ToyPileUpML_Nov2026.pdf give a brief overview of the project utilising the toy generator around the time of the first commits to this repository.
+
 ## Requirements
 
 Install required libraries using venvs and pip in a new environment called newenvname (you should choose a better name):

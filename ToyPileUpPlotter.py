@@ -958,7 +958,7 @@ class ToyPileUpPlotter:
             self,
             true_components,
             predicted_components,
-            similarity_scores=[0.8, 0.85, 0.9, 0.95, 0.99,0.999],
+            similarity_scores=[0.95, 0.975, 0.98, 0.99, 0.999, 0.9999],
             n_par_bins=10
         ):
 
